@@ -46,7 +46,13 @@ s.parentNode.insertBefore(t,s)}(window, document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
 fbq('init', '1275729761384272');
 fbq('track', 'PageView');
-fbq('track', 'ViewContent');
+fbq('track', 'ViewContent', {
+  content_ids: ['qamis-athar'],
+  content_name: 'قميص أثر الرجالي',
+  content_type: 'product',
+  value: 4900,
+  currency: 'DZD'
+});
 </script>
 <noscript><img height="1" width="1" style="display:none"
 src="https://www.facebook.com/tr?id=1275729761384272&ev=PageView&noscript=1"
@@ -103,7 +109,6 @@ body { font-family: 'Cairo', sans-serif; background: #fafafa; color: #000; }
   transition: all 0.25s ease;
 }
 .color-btn:hover { transform: translateY(-2px); }
-/* ✅ الإطار الأسود أُزيل — الآن ظل فقط */
 .color-btn.active {
   transform: scale(1.08);
   box-shadow: 0 4px 12px rgba(0,0,0,0.25);
@@ -405,14 +410,21 @@ input[type="radio"] { accent-color: #000; width: 18px; height: 18px; }
   var MAX_QUANTITY = 10;
   var PHONE_REGEX = /^0[0-9]{9}$/;
 
-  function trackEvent(event, params) {
+  /**
+   * ✅ FIX: دالة trackEvent تدعم الآن eventID لتجنب تكرار الأحداث
+   * عند تفعيل Conversions API (CAPI) من جهة Meta.
+   * Meta تدمج الحدثين (Browser + Server) تلقائياً إذا تطابق event_name و event_id.
+   */
+  function trackEvent(event, params, eventID) {
     if (typeof fbq === 'function') {
-      try { fbq('track', event, params || {}); } catch (e) {}
+      try {
+        var options = {};
+        if (eventID) options.eventID = eventID;
+        fbq('track', event, params || {}, options);
+      } catch (e) {}
     }
   }
 
-  /* ✅ 10 ألوان فقط، بدون نوعيات.
-     ⚠️ استبدل أسماء ملفات الصور (azraq-fatih-1.jpg ...) بأسماء صورك الفعلية. */
   var COLORS = [
     { id: 'azraq-layli',   label: 'أزرق ليلي',  hex: '#120147', textColor: '#fff', images: ['1.webp','2.webp','3.webp','4.webp'] },
     { id: 'azraq-fatih',   label: 'أزرق فاتح',  hex: '#EDF2F4', textColor: '#000', images: ['5.webp','6.webp','7.webp','8.webp'] },
@@ -751,7 +763,20 @@ input[type="radio"] { accent-color: #000; width: 18px; height: 18px; }
     if (method === 'office' && !officeName) { showMessage('يرجى اختيار المكتب.', 'error'); return; }
     if (method === 'home' && !communeName) { showMessage('يرجى اختيار البلدية.', 'error'); return; }
 
-    trackEvent('InitiateCheckout');
+    /**
+     * ✅ FIX: توليد معرّف تكرار (dedupKey) فريد لكل عملية طلب.
+     * يُستخدم لتوحيد event_id بين البكسل في المتصفح و CAPI على السيرفر.
+     * كل حدث من الأحداث الثلاثة يحصل على لاحقة خاصة به لتمييزه:
+     *   _ic  = InitiateCheckout
+     *   _ld  = Lead
+     *   _pr  = Purchase
+     * إذا أرسلت نفس event_id من CAPI، ستدمج Meta الحدثين تلقائياً.
+     */
+    var cleanPhone = phone.replace(/\D/g, '');
+    var dedupKey = 'ord_' + Date.now() + '_' + cleanPhone + '_' + Math.random().toString(36).slice(2, 7);
+
+    // ✅ FIX: تمرير eventID للحدث InitiateCheckout
+    trackEvent('InitiateCheckout', {}, dedupKey + '_ic');
 
     var formatPhone = function (p) { return p.startsWith('0') ? '+213' + p.slice(1) : p; };
 
@@ -776,7 +801,8 @@ input[type="radio"] { accent-color: #000; width: 18px; height: 18px; }
       "ID": "",
       "Stopdesk": method === 'office' ? 'OUI' : 'NON',
       "Nom StopDesk": officeName,
-      "Date": dateTimeFr
+      "Date": dateTimeFr,
+      "event_id": dedupKey // ← (اختياري) أرسله لسيرفرك أيضاً إذا كنت تستخدم CAPI
     };
 
     var btn = $('submit-button');
@@ -791,8 +817,11 @@ input[type="radio"] { accent-color: #000; width: 18px; height: 18px; }
         mode: 'no-cors'
       });
 
-      trackEvent('Lead');
-      trackEvent('Purchase', { value: total, currency: 'DZD' });
+      // ✅ FIX: تمرير eventID للحدث Lead
+      trackEvent('Lead', {}, dedupKey + '_ld');
+
+      // ✅ FIX: تمرير eventID للحدث Purchase
+      trackEvent('Purchase', { value: total, currency: 'DZD' }, dedupKey + '_pr');
 
       showMessage('تمّ تأكيد طلبك ... سنتصل بك إن شاء اللَّه.', 'success');
 
